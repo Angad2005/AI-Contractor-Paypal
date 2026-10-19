@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Settings · AI Contractor PayPal</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <style>
+        .settings-section {
+            margin-bottom: 2rem;
+        }
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .custom-env-form {
+            background: var(--surface-light);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .custom-env-form label {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .custom-env-form input {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        .custom-env-form button {
+            margin-right: 0.5rem;
+        }
+        .custom-env-list {
+            list-style: none;
+            padding: 0;
+        }
+        .custom-env-item {
+            background: var(--surface-light);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .custom-env-item .env-name {
+            font-weight: 600;
+        }
+        .custom-env-item .remove-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .remove-btn:hover {
+            background: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <header>
+            <a class="logo" href="/">AI CONTRACTOR <span>•</span> PAYPAL</a>
+            <a class="secure" href="/">BACK TO WORKSPACE ↗</a>
+        </header>
+        <main>
+            <section class="intro">
+                <div class="kicker">Runtime configuration / admin</div>
+                <h1>Connect your<br><em>providers.</em></h1>
+                <p>Configure the AI model, PayPal Sandbox, and other allowlisted runtime values without editing source files. Secret values are write-only and never displayed back.</p>
+            </section>
+
+            <!-- Predefined Settings -->
+            <section class="card settings-card">
+                <div class="card-head">
+                    <span>ENVIRONMENT OVERRIDES</span>
+                    <span class="step">SECURE</span>
+                </div>
+                <form id="settings-form">
+                    <label>Admin token
+                        <input id="admin-token" type="password" placeholder="Required when SETTINGS_ADMIN_TOKEN is configured">
+                    </label>
+                    <div id="fields"></div>
+                    <button class="primary full" type="submit">Save runtime settings <span>→</span></button>
+                    <p id="message" class="muted"></p>
+                </form>
+            </section>
+
+            <!-- Custom Environment Variables -->
+            <section class="card settings-card">
+                <div class="card-head">
+                    <span>CUSTOM ENVIRONMENT VARIABLES</span>
+                    <span class="step">ADVANCED</span>
+                </div>
+                <div class="settings-section">
+                    <p class="muted">Define additional environment variables that will be available to the application. These are stored securely and treated as secrets.</p>
+                    <div class="custom-env-form">
+                        <label>Variable Name (e.g., MY_API_KEY)</label>
+                        <input id="custom-env-name" type="text" placeholder="Variable name">
+                        <label>Variable Value</label>
+                        <input id="custom-env-value" type="password" placeholder="Variable value">
+                        <button class="primary" type="button" id="add-custom-env">Add Custom Variable</button>
+                    </div>
+                    <ul id="custom-env-list" class="custom-env-list"></ul>
+                </div>
+            </section>
+
+            <section class="card notice-card">
+                <strong>Deployment note</strong>
+                <p class="muted">For Render, the platform Environment settings remain the source of truth for secrets and database URLs. This page stores encrypted application overrides when <code>SETTINGS_ENCRYPTION_KEY</code> is configured. Do not expose this page publicly without setting <code>SETTINGS_ADMIN_TOKEN</code>.</p>
+            </section>
+        </main>
+        <footer>
+            <span>AI CONTRACTOR PAYPAL</span>
+            <span>Secret values are never returned by the settings API.</span>
+        </footer>
+    </div>
+
+    <script>
+        const fields = document.getElementById('fields');
+        const token = document.getElementById('admin-token');
+        const message = document.getElementById('message');
+        const customEnvName = document.getElementById('custom-env-name');
+        const customEnvValue = document.getElementById('custom-env-value');
+        const addCustomEnvBtn = document.getElementById('add-custom-env');
+        const customEnvList = document.getElementById('custom-env-list');
+
+        const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        }[char]));
+
+        async function load() {
+            const response = await fetch('/api/settings', {
+                headers: { 'X-Settings-Token': token.value }
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                message.textContent = data.detail || 'Settings access denied.';
+                return;
+            }
+
+            // Load predefined settings
+            const predefinedSettings = data.settings.filter(s => !s.is_custom);
+            fields.innerHTML = predefinedSettings.map(item => `
+                <label>${esc(item.label)} <span class="setting-key">${esc(item.key)}${item.configured ? ' ✓ configured' : ''}</span>
+                <input name="${esc(item.key)}" type="${item.secret ? 'password' : 'text'}" value="${item.secret ? '' : esc(item.value)}" placeholder="${item.secret ? 'Leave blank to keep the current secret' : esc(item.value)}">
+            </label>
+            `).join('');
+
+            // Load custom environment variables
+            const customSettings = data.settings.filter(s => s.is_custom);
+            customEnvList.innerHTML = customSettings.map(item => `
+                <li class="custom-env-item">
+                    <span class="env-name">${esc(item.label.replace('Custom: ', ''))}</span>
+                    <button class="remove-btn" data-key="${esc(item.key)}">Remove</button>
+                </li>
+            `).join('');
+
+            // Add event listeners to remove buttons
+            document.querySelectorAll('.remove-btn').forEach(btn => {
+                btn.addEventListener('click', () => removeCustomEnv(btn.dataset.key));
+            });
+        }
+
+        async function addCustomEnv() {
+            const name = customEnvName.value.trim();
+            const value = customEnvValue.value.trim();
+
+            if (!name || !value) {
+                alert('Please provide both variable name and value');
+                return;
+            }
+
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Settings-Token': token.value
+                },
+                body: JSON.stringify({ [`CUSTOM_${name}`]: value })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                customEnvName.value = '';
+                customEnvValue.value = '';
+                load();
+            } else {
+                alert(data.detail || 'Could not add custom variable');
+            }
+        }
+
+        async function removeCustomEnv(key) {
+            if (!confirm('Are you sure you want to remove this custom environment variable?')) {
+                return;
+            }
+
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Settings-Token': token.value
+                },
+                body: JSON.stringify({ [key]: '' })  // Send empty value to trigger deletion
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                load();
+            } else {
+                alert(data.detail || 'Could not remove custom variable');
+            }
+        }
+
+        token.addEventListener('change', load);
+        addCustomEnvBtn.addEventListener('click', addCustomEnv);
+
+        document.getElementById('settings-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const payload = {};
+            new FormData(event.target).forEach((value, key) => {
+                if (key !== 'admin-token' && value) payload[key] = value;
+            });
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Settings-Token': token.value
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            message.textContent = response.ok ? 'Saved. Provider services will use the new values for subsequent jobs.' : (data.detail || 'Could not save settings.');
+            if (response.ok) load();
+        });
+
+        // Initial load
+        load();
+    </script>
+</body>
+</html>

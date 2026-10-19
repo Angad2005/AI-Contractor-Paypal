@@ -1,0 +1,95 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>AI Contractor PayPal</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+    <div class="shell">
+        <header>
+            <a class="logo" href="/">AI CONTRACTOR <span>•</span> PAYPAL</a>
+            <div class="secure">● SANDBOX SECURE FLOW</div>
+            <a class="secure" href="/settings">SETTINGS ↗</a>
+        </header>
+
+        <main>
+            <section class="intro">
+                <div class="kicker">Outcome-based contracting / 001</div>
+                <h1>Pay for what<br><em>ships.</em></h1>
+                <p>Describe a landing page. Approve the contract. Watch an AI contractor build, prove, and package the result before a single dollar changes hands.</p>
+                <div class="signals">
+                    <span>01 / CONTRACT</span>
+                    <span>02 / VERIFY</span>
+                    <span>03 / DELIVER</span>
+                </div>
+            </section>
+
+            <section class="workspace">
+                <!-- Brief Card -->
+                <div class="card brief-card">
+                    <div class="card-head">
+                        <span>START A JOB</span>
+                        <span class="step">01</span>
+                    </div>
+                    <label for="prompt">What should the contractor build?</label>
+                    <textarea id="prompt">Build a responsive landing page for a climate-tech startup with a hero section, feature cards, pricing, and a working signup form.</textarea>
+                    <div class="row">
+                        <label class="budget">
+                            Budget
+                            <div>
+                                <span>$</span>
+                                <input id="budget" type="number" value="10" min="1" step="1">
+                                <span>USD</span>
+                            </div>
+                        </label>
+                        <button id="create" class="primary">Draft acceptance contract <span>→</span></button>
+                    </div>
+                    <div id="error" class="error"></div>
+                </div>
+
+                <!-- Contract Card -->
+                <div class="card contract-card hidden" id="contract">
+                    <div class="card-head">
+                        <span>PROPOSED ACCEPTANCE CONTRACT</span>
+                        <span class="step">02</span>
+                    </div>
+                    <div class="contract-title">
+                        <h2>Definition of done</h2>
+                        <span id="contract-price"></span>
+                    </div>
+                    <p class="muted">The contractor can only be paid when each objective check passes.</p>
+                    <div id="criteria" class="criteria"></div>
+                    <button id="approve" class="primary full">Approve & start build <span>→</span></button>
+                </div>
+
+                <!-- Progress Card -->
+                <div class="card progress-card hidden" id="progress">
+                    <div class="card-head">
+                        <span>PROOF OF WORK</span>
+                        <span class="step">03</span>
+                    </div>
+                    <div class="status-line">
+                        <div>
+                            <h2 id="status-title">Generating your deliverable</h2>
+                            <p id="status-copy" class="muted">The worker is assembling the source files.</p>
+                        </div>
+                        <div id="status-dot" class="pulse"></div>
+                    </div>
+                    <div id="checks" class="checks"></div>
+                    <div id="actions" class="actions"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <span>AI CONTRACTOR PAYPAL</span>
+            <span>Verification is independent. Delivery is protected.</span>
+            <a href="/docs">API DOCS →</a>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

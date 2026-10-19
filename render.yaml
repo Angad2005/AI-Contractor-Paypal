@@ -1,0 +1,56 @@
+﻿services:
+  - type: web
+    name: ai-contractor-paypal
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # Application Settings
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        value: sqlite:///./app.db  # For production, use PostgreSQL instead
+      - key: GENERATED_DIR
+        value: generated
+
+      # PayPal Configuration
+      - key: PAYPAL_MODE
+        value: sandbox  # Change to 'mock' for testing
+      - key: PAYPAL_API_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: PAYPAL_RETURN_URL
+        value: https://your-app-name.onrender.com/
+      - key: PAYPAL_CANCEL_URL
+        value: https://your-app-name.onrender.com/
+      # IMPORTANT: Set these in Render dashboard, not here
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+
+      # AI Provider Configuration
+      - key: LLM_PROVIDER
+        value: openai-compatible  # Change to 'demo' for testing
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: LLM_BASE_URL
+        value: https://api.openai.com/v1
+      - key: LLM_TIMEOUT_SECONDS
+        value: 60
+      # IMPORTANT: Set this in Render dashboard, not here
+      - key: LLM_API_KEY
+        sync: false
+
+      # Settings Page Protection (Required for production)
+      # IMPORTANT: Generate strong random values and set in Render dashboard
+      - key: SETTINGS_ADMIN_TOKEN
+        sync: false
+      - key: SETTINGS_ENCRYPTION_KEY
+        sync: false
+
+    # Persistent disk for generated artifacts (SQLite database will still be ephemeral)
+    # For production persistence, use a managed PostgreSQL database instead
+    disk:
+      name: generated-data
+      mountPath: /app/generated
+      sizeGB: 1
