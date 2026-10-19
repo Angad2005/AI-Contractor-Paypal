@@ -3,65 +3,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="#050c09">
     <title>Settings · AI Contractor PayPal</title>
     <link rel="stylesheet" href="/static/css/app.css">
-    <style>
-        .settings-section {
-            margin-bottom: 2rem;
-        }
-        .settings-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-        .custom-env-form {
-            background: var(--surface-light);
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
-        .custom-env-form label {
-            display: block;
-            margin-bottom: 0.5rem;
-        }
-        .custom-env-form input {
-            width: 100%;
-            margin-bottom: 1rem;
-        }
-        .custom-env-form button {
-            margin-right: 0.5rem;
-        }
-        .custom-env-list {
-            list-style: none;
-            padding: 0;
-        }
-        .custom-env-item {
-            background: var(--surface-light);
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 0.5rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .custom-env-item .env-name {
-            font-weight: 600;
-        }
-        .custom-env-item .remove-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 0.25rem 0.75rem;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .remove-btn:hover {
-            background: #c82333;
-        }
-    </style>
+    <script src="/static/js/app.js"></script>
 </head>
 <body>
+    <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+
     <div class="shell">
         <header>
             <a class="logo" href="/">AI CONTRACTOR <span>•</span> PAYPAL</a>
@@ -99,17 +48,17 @@
                 <div class="settings-section">
                     <p class="muted">Define additional environment variables that will be available to the application. These are stored securely and treated as secrets.</p>
                     <div class="custom-env-form">
-                        <label>Variable Name (e.g., MY_API_KEY)</label>
+                        <label for="custom-env-name">Variable Name (e.g., MY_API_KEY)</label>
                         <input id="custom-env-name" type="text" placeholder="Variable name">
-                        <label>Variable Value</label>
+                        <label for="custom-env-value">Variable Value</label>
                         <input id="custom-env-value" type="password" placeholder="Variable value">
-                        <button class="primary" type="button" id="add-custom-env">Add Custom Variable</button>
+                        <button class="primary" type="button" id="add-custom-env">Add Custom Variable <span>+</span></button>
                     </div>
                     <ul id="custom-env-list" class="custom-env-list"></ul>
                 </div>
             </section>
 
-            <section class="card notice-card">
+            <section class="card notice-card settings-card">
                 <strong>Deployment note</strong>
                 <p class="muted">For Render, the platform Environment settings remain the source of truth for secrets and database URLs. This page stores encrypted application overrides when <code>SETTINGS_ENCRYPTION_KEY</code> is configured. Do not expose this page publicly without setting <code>SETTINGS_ADMIN_TOKEN</code>.</p>
             </section>

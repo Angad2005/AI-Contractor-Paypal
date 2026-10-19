@@ -1,12 +1,16 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="#050c09">
     <title>AI Contractor PayPal</title>
     <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/app.js"></script>
 </head>
 <body>
+    <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+
     <div class="shell">
         <header>
             <a class="logo" href="/">AI CONTRACTOR <span>•</span> PAYPAL</a>
@@ -25,6 +29,13 @@
                     <span>03 / DELIVER</span>
                 </div>
             </section>
+
+            <div class="marquee" aria-hidden="true">
+                <div>
+                    <span>PAY FOR WHAT SHIPS</span><b>✦</b><span>INDEPENDENT VERIFICATION</span><b>✦</b><span>SERVER-SIDE CAPTURE</span><b>✦</b><span>ACCEPTANCE CONTRACTS</span><b>✦</b>
+                    <span>PAY FOR WHAT SHIPS</span><b>✦</b><span>INDEPENDENT VERIFICATION</span><b>✦</b><span>SERVER-SIDE CAPTURE</span><b>✦</b><span>ACCEPTANCE CONTRACTS</span><b>✦</b>
+                </div>
+            </div>
 
             <section class="workspace">
                 <!-- Brief Card -->
@@ -46,7 +57,7 @@
                         </label>
                         <button id="create" class="primary">Draft acceptance contract <span>→</span></button>
                     </div>
-                    <div id="error" class="error"></div>
+                    <div id="error" class="error" role="alert"></div>
                 </div>
 
                 <!-- Contract Card -->
@@ -61,7 +72,7 @@
                     </div>
                     <p class="muted">The contractor can only be paid when each objective check passes.</p>
                     <div id="criteria" class="criteria"></div>
-                    <button id="approve" class="primary full">Approve & start build <span>→</span></button>
+                    <button id="approve" class="primary full">Approve &amp; start build <span>→</span></button>
                 </div>
 
                 <!-- Progress Card -->
@@ -70,13 +81,14 @@
                         <span>PROOF OF WORK</span>
                         <span class="step">03</span>
                     </div>
-                    <div class="status-line">
+                    <div class="status-line" aria-live="polite">
                         <div>
                             <h2 id="status-title">Generating your deliverable</h2>
                             <p id="status-copy" class="muted">The worker is assembling the source files.</p>
                         </div>
                         <div id="status-dot" class="pulse"></div>
                     </div>
+                    <div id="scan" class="scan"></div>
                     <div id="checks" class="checks"></div>
                     <div id="actions" class="actions"></div>
                 </div>
@@ -90,6 +102,5 @@
         </footer>
     </div>
 
-    <script src="/static/js/app.js"></script>
 </body>
 </html>
