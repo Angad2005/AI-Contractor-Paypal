@@ -20,7 +20,7 @@ The fastest way to evaluate this project is to run it locally:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/Angad2005/AI-Contractor-Paypal.git
 cd AI-Contractor-Paypal
 
 # Create virtual environment
@@ -34,8 +34,9 @@ pip install -r requirements.txt
 # Install Playwright's Chromium browser (optional; HTML verification still completes if omitted)
 playwright install chromium
 
-# Configure environment
-copy .env.example .env  # Windows; use cp on macOS/Linux
+# Configure NVIDIA NIM (the example contains NIM settings only)
+cp .env.example .env  # Windows PowerShell: Copy-Item .env.example .env
+# Edit .env and replace LLM_API_KEY with your NVIDIA NIM API key
 
 # Run database migration (if upgrading from an older version)
 python migrate_db.py
@@ -46,7 +47,9 @@ uvicorn app.main:app --reload
 
 Open [http://localhost:8000](http://localhost:8000) to access the application. Interactive API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
-**Default Configuration**: PayPal starts in mock mode. Contract drafting, software generation, and repair use the configured NVIDIA NIM model and require its API key. An explicit `LLM_PROVIDER=demo` setting selects the generic offline fixture for local tests only; do not use that mode for customer jobs.
+**Default Configuration**: The checked-in `.env.example` contains only NVIDIA NIM configuration: provider, API key placeholder, model ID, and API base URL. It does not include PayPal or application settings. The default model is `nvidia/nemotron-3.5-bolt-e4b`, selected as the quick-response starting point. Replace `LLM_API_KEY` with a key that has access to your chosen model; change `LLM_MODEL` to another NVIDIA NIM model available to your account if you want a different speed/capability trade-off. Actual response time depends on model availability, load, prompt size, network, and your account limits.
+
+PayPal starts in mock mode by default, and the app uses its built-in development defaults for the database and generated files. Configure PayPal and production-only settings separately through the deployment environment or `/settings`; see [PayPal Sandbox Configuration](#paypal-sandbox-configuration) and [Additional Environment Variables](#additional-environment-variables). Contract drafting, software generation, and repair require an accessible LLM provider. An explicit `LLM_PROVIDER=demo` setting selects a generic offline fixture for local tests only; do not use that mode for customer jobs.
 
 ## Project Overview
 
@@ -70,31 +73,33 @@ The generated product runs entirely in the browser and has no backend integratio
 
 ### AI Provider Configuration
 
-Configure NVIDIA NIM in `.env` (NIM provides an OpenAI-compatible chat-completions endpoint):
+The tracked [`.env.example`](.env.example) intentionally contains **NVIDIA NIM settings only**. Copy it to `.env`, then replace the placeholder with an NVIDIA NIM API key from an account that can access the selected model. NIM exposes an OpenAI-compatible chat-completions endpoint:
 
 ```env
 LLM_PROVIDER=nvidia-nim
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=your-nvidia-nim-model-id
+LLM_API_KEY=your_nvidia_nim_api_key
+LLM_MODEL=nvidia/nemotron-3.5-bolt-e4b
 LLM_BASE_URL=https://integrate.api.nvidia.com/v1
 ```
 
-**Note**: The model ID and API key are read from `.env` or `/settings`. If NIM is unavailable or returns an invalid response, the job reports an AI error instead of silently switching to the offline fixture.
+`nvidia/nemotron-3.5-bolt-e4b` is the project's default model, chosen for fast responses. The exact speed and output quality depend on NVIDIA's service, model availability, prompt size, and account quotas; this is a default, not a guaranteed latency benchmark. You can change `LLM_MODEL` to another model ID enabled for your NIM account. The API key and model are loaded from `.env` or the runtime settings page. For NVIDIA NIM, the provider can retry with `nvidia/nemotron-3.5-bolt-e4b` when a different configured model fails under retryable conditions, so ensure your key can use the fallback too or configure the default model directly. Provider errors are surfaced; the app does not silently switch to its offline demo fixture.
 
-### LM Studio Configuration
+The API key is sent from the server to NVIDIA as an authorization credential and is not embedded in frontend assets. Do not share a populated `.env` file or commit it to Git.
 
-Load a model in LM Studio and start its local server on port 1234. Find the exact model identifier at http://localhost:1234/v1/models, then configure:
+### Other OpenAI-Compatible Providers (Optional)
 
+The application also has compatibility handling for LM Studio and Groq, but these settings are **not** included in `.env.example`, which is intentionally NIM-only. For LM Studio, load a model, start its local server on port 1234, and use the exact model identifier shown at `http://localhost:1234/v1/models`:
+
+```env
 LLM_PROVIDER=lm-studio
 LLM_API_KEY=
 LLM_MODEL=your-loaded-lm-studio-model-id
 LLM_BASE_URL=http://localhost:1234/v1
+```
 
 The local LM Studio server does not require an API key by default; leave it blank unless you enabled server authentication, then enter the LM Studio token. If this app runs inside WSL or a container and localhost cannot reach LM Studio on Windows, use the Windows host address that LM Studio exposes on your local network.
 
-LM Studio does not accept OpenAI's `json_object` response format, so the app requests text output from LM Studio and parses the JSON required by its prompts.
-
-Groq also uses text response mode because some model generations fail Groq's JSON-mode validation; the app parses and validates the JSON returned in the response.
+LM Studio and Groq use text response mode where needed; the app parses and validates the JSON returned by the model. The LLM provider setting, API key, model, and base URL can also be set through `/settings`.
 
 ### PayPal Sandbox Configuration
 
@@ -120,13 +125,15 @@ The application includes a runtime settings page at `/settings` where you can co
 - **For Production**: Set `SETTINGS_ADMIN_TOKEN` and `SETTINGS_ENCRYPTION_KEY` in your environment variables for secure encrypted storage
 
 The settings page supports:
-- LLM provider configuration (API key, model, base URL, timeout)
+- LLM provider configuration (provider, API key, model, and base URL)
 - PayPal configuration (mode, client ID, client secret, API URLs)
 - **Custom environment variable definitions**: Add any additional environment variables your application needs (e.g., third-party API keys, feature flags, etc.) without modifying the code
 - The settings page provides a user-friendly GUI with explanations for each field, making it easy to understand what values go where
 - Non-secret fields show the active runtime values loaded from the project-root `.env` file (and any saved runtime overrides), regardless of the directory used to launch the app. Secret values remain write-only; the GUI only indicates whether they are configured.
 
 ### Additional Environment Variables
+
+These are optional application/deployment settings, not part of the NVIDIA-only `.env.example`. The app has development defaults for the first three; configure the last two for protected production settings:
 
 ```env
 # Application

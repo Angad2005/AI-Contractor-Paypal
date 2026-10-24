@@ -32,7 +32,7 @@
       - key: LLM_PROVIDER
         value: nvidia-nim
       - key: LLM_MODEL
-        sync: false
+        value: nvidia/nemotron-3.5-bolt-e4b
       - key: LLM_BASE_URL
         value: https://integrate.api.nvidia.com/v1
       # IMPORTANT: Set this in Render dashboard, not here
