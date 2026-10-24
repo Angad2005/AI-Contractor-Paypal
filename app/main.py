@@ -4,13 +4,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from app.core.config import settings
-from app.db.database import Base, engine
-from app.db.database import SessionLocal
+from app.db.database import Base, SessionLocal, engine, migrate_legacy_columns
 from app.api.routes import router
 from app.services.runtime_settings import load_runtime_settings
 
 Path(settings.generated_dir).mkdir(exist_ok=True)
 Base.metadata.create_all(bind=engine)
+migrate_legacy_columns(engine)
 with SessionLocal() as startup_db:
     load_runtime_settings(startup_db)
 app = FastAPI(title=settings.app_name, version="1.0.0", description="Outcome-based AI contracting with verification-gated PayPal delivery")

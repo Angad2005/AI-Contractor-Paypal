@@ -1,5 +1,6 @@
 from typing import Any
 import os
+from pathlib import Path
 
 from app.core.config import settings
 from app.db.models import AppSetting
@@ -15,7 +16,6 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "llm_api_key": {"label": "LLM API key", "secret": True},
     "llm_model": {"label": "LLM model", "secret": False},
     "llm_base_url": {"label": "LLM base URL", "secret": False},
-    "llm_timeout_seconds": {"label": "LLM timeout seconds", "secret": False},
     "paypal_mode": {"label": "PayPal mode", "secret": False},
     "paypal_client_id": {"label": "PayPal client ID", "secret": True},
     "paypal_client_secret": {"label": "PayPal client secret", "secret": True},
@@ -54,8 +54,6 @@ def _decode(value: str) -> str:
 
 
 def apply_runtime_setting(key: str, value: str) -> None:
-    if key == "llm_timeout_seconds":
-        value = float(value)
     setattr(settings, key, value)
 
 
@@ -64,9 +62,38 @@ def apply_custom_env_var(key: str, value: str) -> None:
     os.environ[key] = value
 
 
+def _configured_environment_names() -> set[str]:
+    """Return configured variable names without reading values into logs or output."""
+    names = {name.upper() for name in os.environ}
+    env_file = settings.model_config.get("env_file")
+    if not env_file:
+        return names
+    env_files = env_file if isinstance(env_file, (tuple, list)) else (env_file,)
+    for candidate in env_files:
+        path = Path(candidate)
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.lower().startswith("export "):
+                stripped = stripped[7:].lstrip()
+            name, separator, _value = stripped.partition("=")
+            if separator and name.strip():
+                names.add(name.strip().upper())
+    return names
+
+
 def load_runtime_settings(db) -> None:
+    # Explicit process/.env configuration wins over stale database overrides.
+    # The settings UI can still change values for the current process, but a
+    # restart returns to the deployment's explicit environment configuration.
+    environment_names = _configured_environment_names()
     for record in db.query(AppSetting).all():
         if record.key in SETTING_DEFINITIONS:
+            if record.key.upper() in environment_names:
+                continue
             apply_runtime_setting(record.key, _decode(record.value))
         elif record.is_custom:
             env_key = record.key[7:] if record.key.startswith("CUSTOM_") else record.key

@@ -19,9 +19,9 @@
       - key: PAYPAL_API_BASE_URL
         value: https://api-m.sandbox.paypal.com
       - key: PAYPAL_RETURN_URL
-        value: https://your-app-name.onrender.com/
+        value: https://your-app-name.onrender.com/api/paypal/return
       - key: PAYPAL_CANCEL_URL
-        value: https://your-app-name.onrender.com/
+        value: https://your-app-name.onrender.com/api/paypal/cancel
       # IMPORTANT: Set these in Render dashboard, not here
       - key: PAYPAL_CLIENT_ID
         sync: false
@@ -30,13 +30,11 @@
 
       # AI Provider Configuration
       - key: LLM_PROVIDER
-        value: openai-compatible  # Change to 'demo' for testing
+        value: nvidia-nim
       - key: LLM_MODEL
-        value: gpt-4o-mini
+        sync: false
       - key: LLM_BASE_URL
-        value: https://api.openai.com/v1
-      - key: LLM_TIMEOUT_SECONDS
-        value: 60
+        value: https://integrate.api.nvidia.com/v1
       # IMPORTANT: Set this in Render dashboard, not here
       - key: LLM_API_KEY
         sync: false

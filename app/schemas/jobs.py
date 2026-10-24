@@ -1,4 +1,6 @@
-﻿from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 class JobCreate(BaseModel):
     prompt: str = Field(min_length=20, max_length=2000)
@@ -15,7 +17,7 @@ class Contract(BaseModel):
     required_features: list[str]
     criteria: list[Criterion]
     price: float
-    currency: str = "USD"
+    currency: Literal["USD"] = "USD"
 
 class JobSummary(BaseModel):
     id: str
@@ -23,7 +25,7 @@ class JobSummary(BaseModel):
     prompt: str
     status: str
     price: float
-    currency: str
+    currency: Literal["USD"]
     contract: Contract | None = None
     runs: list[dict] = []
     paid: bool = False

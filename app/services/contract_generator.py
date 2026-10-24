@@ -1,7 +1,5 @@
-import re
-
 from app.schemas.jobs import Contract, Criterion
-from app.services.llm_provider import LLMProviderError, complete_json, is_configured
+from app.services.llm_provider import LLMProviderError, complete_json, is_demo_mode
 
 
 def _deterministic_contract(prompt: str, budget: float) -> Contract:
@@ -31,27 +29,38 @@ def make_contract(prompt: str, budget: float) -> Contract:
     Price and currency are always overridden by server-controlled values so the model
     cannot redefine the commercial terms supplied by the customer.
     """
-    if is_configured():
-        try:
-            result = complete_json(
-                """You are the contract analyst for an outcome-based AI contractor.
-Return only JSON with required_sections (array of strings), required_features (array
-of strings), and criteria (array of objects with key, label, detail, required).
-Criteria must be concrete and independently testable for an HTML landing page.""",
-                f"Customer brief:\n{prompt}\nApproved budget: {budget:.2f} USD",
-            )
-            contract = Contract.model_validate(
-                {
-                    **result,
-                    "price": round(budget, 2),
-                    "currency": "USD",
-                }
-            )
-            if not contract.criteria:
-                raise ValueError("The model returned no acceptance criteria")
-            return contract
-        except (LLMProviderError, ValueError, TypeError):
-            # The demo remains runnable if a provider is temporarily unavailable.
-            # The configured-provider path is still exercised whenever the request succeeds.
-            pass
-    return _deterministic_contract(prompt, budget)
+    if is_demo_mode():
+        return _deterministic_contract(prompt, budget)
+
+    result = None
+    try:
+        from app.services.agent_workflow import run_contract_analyst_agent
+        result = run_contract_analyst_agent(prompt, budget)
+    except Exception:
+        pass
+
+    if not result:
+        result = complete_json(
+            """You are the contract analyst for an outcome-based AI software contractor.
+Return only JSON with required_sections (array of meaningful screen or section names),
+required_features (array of product capabilities), and criteria (array of objects with
+key, label, detail, required). Write 4-12 concrete, independently verifiable criteria
+for a browser-based software product described in the brief, with one criterion for
+each distinct requested feature or workflow. Include an app_shell
+criterion and a core_workflow criterion, plus responsive behavior and navigation when
+relevant. Use short lowercase snake_case keys and feature-specific criteria. Do not use
+landing-page-only hero, features, pricing, or signup criteria unless the brief asks for
+a marketing page. Do not turn the contractor budget into a product price or ask for a
+generic marketing landing page unless the brief does.""",
+            f"Customer brief:\n{prompt}\nApproved contractor budget: {budget:.2f} USD",
+        )
+    contract = Contract.model_validate(
+        {
+            **result,
+            "price": round(budget, 2),
+            "currency": "USD",
+        }
+    )
+    if not contract.criteria:
+        raise ValueError("The model returned no acceptance criteria")
+    return contract

@@ -11,13 +11,104 @@ Note: Playwright is optional. If not installed, falls back to HTML-only verifica
 """
 
 from pathlib import Path
-from typing import Optional
 
 try:
+    from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import sync_playwright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
+    PlaywrightError = RuntimeError
+    sync_playwright = None
     PLAYWRIGHT_AVAILABLE = False
+
+
+def _skipped_check(evidence: str) -> dict:
+    return {
+        "key": "browser_check",
+        "label": "Browser-based verification",
+        "passed": False,
+        "skipped": True,
+        "evidence": evidence,
+        "method": "browser"
+    }
+
+
+def _verify_software_with_browser(path: str, contract) -> list[dict]:
+    """Smoke-check a generated software product without assuming landing-page controls."""
+    checks = []
+    try:
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(headless=True)
+            except PlaywrightError as e:
+                return [_skipped_check(
+                    f"Chromium is unavailable; browser checks were skipped: {e}. "
+                    "Install it with: playwright install chromium"
+                )]
+
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            console_errors = []
+            page_errors = []
+            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            page.goto(f"file://{Path(path).absolute()}")
+
+            body_text = page.locator("body").inner_text().strip()
+            checks.append({
+                "key": "application_rendered",
+                "label": "Software preview renders content",
+                "passed": bool(body_text),
+                "evidence": "The application displayed visible content" if body_text else "The application body is empty",
+                "method": "browser",
+            })
+
+            marker_keys = [
+                criterion.key for criterion in contract.criteria
+                if criterion.key not in {"app_shell", "responsive", "navigation"}
+            ]
+            visible_markers = []
+            for key in marker_keys:
+                visible = page.locator("[data-acceptance-key]").evaluate_all(
+                    "(nodes, key) => nodes.some(node => node.dataset.acceptanceKey === key && "
+                    "!!(node.offsetWidth || node.offsetHeight || node.getClientRects().length))",
+                    key,
+                )
+                if visible:
+                    visible_markers.append(key)
+            checks.append({
+                "key": "criteria_visible",
+                "label": "Approved product features appear in the preview",
+                "passed": len(visible_markers) == len(marker_keys),
+                "evidence": f"{len(visible_markers)} of {len(marker_keys)} criterion markers are visible",
+                "method": "browser",
+            })
+
+            page.set_viewport_size({"width": 375, "height": 812})
+            has_horizontal_overflow = page.evaluate(
+                "document.documentElement.scrollWidth > window.innerWidth + 1"
+            )
+            checks.append({
+                "key": "responsive_mobile",
+                "label": "Software preview fits a mobile viewport",
+                "passed": not has_horizontal_overflow,
+                "evidence": "No horizontal overflow at 375px" if not has_horizontal_overflow else "Content overflows the 375px viewport",
+                "method": "browser",
+            })
+
+            checks.append({
+                "key": "no_js_errors",
+                "label": "No JavaScript runtime errors",
+                "passed": not console_errors and not page_errors,
+                "evidence": "No browser errors detected" if not console_errors and not page_errors else f"{len(console_errors) + len(page_errors)} browser error(s) detected",
+                "method": "browser",
+            })
+            browser.close()
+    except PlaywrightError as e:
+        return [_skipped_check(
+            f"Browser runtime is unavailable; browser checks were skipped: {e}. "
+            "Install it with: playwright install chromium"
+        )]
+    return checks
 
 
 def verify_with_browser(path: str, contract) -> list[dict]:
@@ -32,19 +123,27 @@ def verify_with_browser(path: str, contract) -> list[dict]:
         List of verification results from browser tests
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return [{
-            "key": "browser_check",
-            "label": "Browser-based verification",
-            "passed": False,
-            "evidence": "Playwright not installed. Install with: pip install playwright && playwright install",
-            "method": "browser"
-        }]
+        return [_skipped_check(
+            "Playwright is not installed; browser checks were skipped. Install Playwright "
+            "and Chromium with: pip install playwright && playwright install chromium"
+        )]
+
+    legacy_keys = {"hero", "features", "pricing", "signup", "responsive", "navigation"}
+    criteria_keys = {criterion.key for criterion in contract.criteria} if contract and getattr(contract, "criteria", None) else set()
+    if criteria_keys and criteria_keys != legacy_keys:
+        return _verify_software_with_browser(path, contract)
 
     checks = []
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            try:
+                browser = p.chromium.launch(headless=True)
+            except PlaywrightError as e:
+                return [_skipped_check(
+                    f"Chromium is unavailable; browser checks were skipped: {e}. "
+                    "Install it with: playwright install chromium"
+                )]
             page = browser.new_page()
 
             # Load the generated page
@@ -160,13 +259,10 @@ def verify_with_browser(path: str, contract) -> list[dict]:
 
             browser.close()
 
-    except Exception as e:
-        checks.append({
-            "key": "browser_check",
-            "label": "Browser-based verification",
-            "passed": False,
-            "evidence": f"Browser verification failed: {str(e)}",
-            "method": "browser"
-        })
+    except PlaywrightError as e:
+        checks.append(_skipped_check(
+            f"Browser runtime is unavailable; browser checks were skipped: {e}. "
+            "Install it with: playwright install chromium"
+        ))
 
     return checks

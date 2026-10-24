@@ -263,16 +263,88 @@ document.addEventListener("mousemove", function (event) {
     const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
     }[c]));
+    const money = (amount) => {
+      try { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(amount || 0)); }
+      catch { return `$${Number(amount || 0).toFixed(2)}`; }
+    };
 
-    function showError(message) { $("error").textContent = message; }
+    function renderBill(job, paid) {
+      const bill = $("bill");
+      const items = Array.isArray(job.bill_items) ? job.bill_items : [];
+      if (!items.length) { bill.innerHTML = ""; bill.classList.add("hidden"); return; }
+      const labels = { passed: "PASSED · BILLED", failed: "FAILED · $0", skipped: "SKIPPED · $0", pending: "NOT CHECKED" };
+      const statusClasses = { passed: "pass", failed: "fail", skipped: "muted", pending: "muted" };
+      bill.innerHTML = `
+        <div class="invoice-head">
+          <div><span class="invoice-kicker">ITEMIZED BILL</span><h3>Acceptance check charges</h3></div>
+          <span class="invoice-count">${Number(job.criteria_passed || 0)} / ${Number(job.criteria_total || 0)} billable checks passed</span>
+        </div>
+        <p class="invoice-note">The approved budget is divided evenly across the acceptance checks. Only passed checks are charged; each failed or skipped check is $0.</p>
+        <div class="invoice-columns" aria-hidden="true"><span>ACCEPTANCE CHECK</span><span>RESULT</span><span>SHARE</span><span>CHARGED</span></div>
+        <div class="invoice-lines">${items.map((item) => {
+          const state = String(item.status || "pending").toLowerCase();
+          return `<div class="invoice-line">
+            <div class="invoice-description"><strong>${esc(item.label)}</strong>${item.detail ? `<small>${esc(item.detail)}</small>` : ""}</div>
+            <span class="invoice-state ${statusClasses[state] || "muted"}">${labels[state] || esc(state.toUpperCase())}</span>
+            <span class="invoice-share">${money(item.allocated_amount)}</span>
+            <strong class="invoice-charge">${money(item.billed_amount)}</strong>
+          </div>`;
+        }).join("")}</div>
+        <div class="invoice-totals">
+          <div><span>Approved budget</span><strong>${money(job.total_budget ?? job.price)}</strong></div>
+          <div class="invoice-due"><span>${paid ? "Paid" : "Amount due"}</span><strong>${money(job.payable_amount)}</strong></div>
+        </div>`;
+      bill.classList.remove("hidden");
+    }
+
+    function showError(message) {
+      const progressVisible = !$("progress").classList.contains("hidden");
+      const target = progressVisible ? $("payment-error") : $("error");
+      if (target) target.textContent = message;
+    }
 
     function setLoading(button, on) {
       button.classList.toggle("loading", on);
+      button.disabled = on;
+    }
+
+    async function loadPaypalDiagnostics() {
+      const response = await fetch(`/api/jobs/${jobId}/paypal/diagnostics`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not inspect this PayPal order.");
+      return result;
+    }
+
+    async function inspectPaypalSeller(button) {
+      setLoading(button, true);
+      try {
+        const diagnostic = await loadPaypalDiagnostics();
+        const currency = esc(diagnostic.currency || "unknown currency");
+        const amount = esc(diagnostic.amount || "unknown amount");
+        const status = esc(diagnostic.status || "unknown");
+        const merchant = diagnostic.payee_merchant_id
+          ? `PayPal's Sandbox seller merchant ID is ${esc(diagnostic.payee_merchant_id)}. Compare it with the Test Store account where you enabled currency conversion; if they differ, use that Test Store's REST app credentials in the app's Sandbox configuration.`
+          : "PayPal did not include a seller merchant ID. Confirm the app uses the Sandbox REST app credentials owned by the Test Store account whose preferences you changed.";
+        showError(`PayPal order ${amount} ${currency} (status ${status}). ${merchant} If the IDs match but PayPal reports UNSUPPORTED_PAYEE_CURRENCY, PayPal is rejecting this currency for that seller or region.`);
+      } catch (error) {
+        showError(error.message || "Could not inspect this PayPal order.");
+      } finally {
+        if (button.isConnected) setLoading(button, false);
+      }
     }
 
     function renderContract(job) {
-      $("contract-price").textContent = `$${job.price.toFixed(2)} ${job.currency}`;
-      $("criteria").innerHTML = job.contract.criteria.map((criterion) => `<div class="criterion"><span class="check">✓</span><div><strong>${esc(criterion.label)}</strong><small>${esc(criterion.detail)}</small></div></div>`).join("");
+      $("contract-price").textContent = `Up to ${money(job.price)}`;
+      const criteria = job.contract.criteria || [];
+      const totalCents = Math.round(Number(job.price) * 100);
+      const baseCents = criteria.length ? Math.floor(totalCents / criteria.length) : 0;
+      const remainderCents = criteria.length ? totalCents % criteria.length : 0;
+      $("criteria").innerHTML = criteria.map((criterion, index) => {
+        const share = (baseCents + (index < remainderCents ? 1 : 0)) / 100;
+        return '<div class="criterion"><span class="check">✓</span><div class="criterion-info"><strong>' +
+          esc(criterion.label) + '</strong><small>' + esc(criterion.detail) +
+          '</small></div><span class="criterion-share">Share ' + money(share) + '</span></div>';
+      }).join("");
       $("contract").classList.remove("hidden");
       $("contract").scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     }
@@ -283,8 +355,9 @@ document.addEventListener("mousemove", function (event) {
       setLoading(button, true);
       try {
         const response = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: $("prompt").value, budget: Number($("budget").value) }) });
-        if (!response.ok) throw new Error("Please add a little more detail to your brief.");
-        const job = await response.json(); jobId = job.id; renderContract(job);
+        const job = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(job.detail || "Please add a little more detail to your brief.");
+        jobId = job.id; renderContract(job);
       } catch (error) { showError(error.message); }
       finally { setLoading(button, false); }
     };
@@ -303,10 +376,11 @@ document.addEventListener("mousemove", function (event) {
 
     async function poll() {
       const job = await (await fetch(`/api/jobs/${jobId}`)).json();
-      if (["SPEC_APPROVED", "GENERATING", "VERIFYING", "REPAIRING"].includes(job.status)) {
+      if (["SPEC_APPROVED", "GENERATING", "REBUILDING", "VERIFYING", "REPAIRING"].includes(job.status)) {
         const labels = {
           SPEC_APPROVED: "Contract locked. Starting the build",
           GENERATING: "Generating your deliverable",
+          REBUILDING: "Replacing the previous preview with a prompt-specific AI build",
           VERIFYING: "Verifying every acceptance criterion",
           REPAIRING: "Repairing failed checks"
         };
@@ -319,12 +393,23 @@ document.addEventListener("mousemove", function (event) {
 
     function renderResults(job) {
       const latest = job.runs.at(-1);
+      const generationError = latest && latest.results.find((result) => result.key === "generation");
+      const acceptanceKeys = new Set((job.contract?.criteria || []).map((criterion) => criterion.key));
+      const paid = job.paid || ["PAID", "DELIVERED"].includes(job.status);
+      const paymentPending = job.status === "PAYMENT_PENDING";
+      const payable = Number(job.payable_amount ?? job.price ?? 0);
+      const checkoutReady = Boolean(job.can_checkout ?? ["VERIFIED", "BILLABLE"].includes(job.status)) && payable > 0;
+      const allCriteriaPassed = Number(job.criteria_total || 0) > 0 && Number(job.criteria_passed || 0) === Number(job.criteria_total || 0);
+      const verified = job.status === "VERIFIED" || (checkoutReady && allCriteriaPassed);
+      const billable = job.status === "BILLABLE" || (checkoutReady && !allCriteriaPassed);
+      renderBill(job, paid);
       $("scan").classList.add("done");
-      $("status-title").textContent = job.status === "VERIFIED" ? "Verified. Ready for checkout." : "Verification needs attention";
-      $("status-copy").textContent = job.status === "VERIFIED" ? "Every acceptance criterion passed independently." : "The contractor could not satisfy every approved check.";
-      const ok = job.status === "VERIFIED";
-      $("status-dot").style.background = ok ? "var(--lime)" : "var(--red)";
-      $("status-dot").style.boxShadow = `0 0 20px ${ok ? "var(--lime)" : "var(--red)"}`;
+      $("status-title").textContent = paid ? "Payment confirmed. Delivery is ready." : verified ? "Verified. Continue to payment." : billable ? "Partial results are billable. Continue to payment." : paymentPending ? "PayPal approval is pending." : generationError ? "AI generation could not complete." : "Verification needs attention";
+      $("status-copy").textContent = paid ? "The server confirmed payment. Your verified source ZIP is ready." : verified ? `All ${job.criteria_total} acceptance checks passed. Amount due: ${money(payable)}.` : billable ? `${job.criteria_passed} of ${job.criteria_total} acceptance checks passed. Only passed checks are billed: ${money(payable)}.` : paymentPending ? `Approve the ${money(payable)} order with PayPal, then return here to confirm capture.` : generationError ? generationError.evidence : "No approved acceptance checks passed, so there is no payment due.";
+      const ok = verified || billable || paid || checkoutReady;
+      const dotColor = ok ? "var(--lime)" : paymentPending ? "#f6c453" : "var(--red)";
+      $("status-dot").style.background = dotColor;
+      $("status-dot").style.boxShadow = `0 0 20px ${dotColor}`;
       $("status-dot").style.animation = "none";
 
       // Show verification results with evidence
@@ -332,66 +417,159 @@ document.addEventListener("mousemove", function (event) {
         <div class="result">
           <div>
             <span>${esc(result.label)}</span>
+            <small class="muted">${acceptanceKeys.has(result.key) ? "BUDGET CHECK" : "QUALITY CHECK · NOT BILLED"}</small>
             ${result.evidence ? `<small class="muted">${esc(result.evidence)}</small>` : ''}
           </div>
-          <span class="${result.passed ? "pass" : "fail"}">${result.passed ? "PASS" : "FAIL"}</span>
+          <span class="${result.skipped ? "muted" : result.passed ? "pass" : "fail"}">${result.skipped ? "SKIPPED" : result.passed ? "PASS" : "FAIL"}</span>
         </div>
       `).join("") : "";
 
-      // Add preview buttons
       let buttons = "";
-      if (job.status === "VERIFIED") {
-        buttons += `<button class="primary" id="checkout">Create PayPal Sandbox order <span>→</span></button>`;
+      if (paid) {
+        buttons += `<p class="muted">Capture <strong>${esc(job.capture_id || "confirmed")}</strong> was verified by the server.</p><button class="primary" id="download">Download verified source ZIP <span>↓</span></button>`;
+      } else if (checkoutReady) {
+        buttons += `<button class="paypal-button" id="checkout"><span class="paypal-wordmark" aria-label="PayPal">PayPal</span><span>Continue to payment · ${money(payable)}</span><span aria-hidden="true">→</span></button>`;
+      } else if (paymentPending) {
+        buttons += `<p class="muted">Order <strong>${esc(job.payment_order_id || "")}</strong> for ${money(payable)} is waiting for buyer approval.</p>`;
+        if (job.payment_approval_url) buttons += `<a class="paypal-button" href="${esc(job.payment_approval_url)}"><span class="paypal-wordmark" aria-label="PayPal">PayPal</span><span>Continue to PayPal checkout</span><span aria-hidden="true">↗</span></a>`;
+        else if (String(job.payment_mode).toLowerCase() === "mock") buttons += `<p class="muted mock-payment-note">Mock mode is active. This order will not charge a PayPal account. Set <code>PAYPAL_MODE=sandbox</code> to use PayPal Sandbox.</p>`;
+        buttons += `<p class="muted">If PayPal reports that the seller does not accept this currency, enable it or allow conversion in the seller account’s payment receiving preferences, then reset the order.</p>`;
+        if (String(job.payment_mode).toLowerCase() !== "mock") buttons += `<button class="secondary" id="paypal-diagnostics">Inspect PayPal seller and currency <span>⌕</span></button>`;
+        buttons += `<button class="secondary" id="reset-checkout">Reset this order and retry checkout <span>↻</span></button>`;
+        buttons += `<button class="secondary" id="capture">${String(job.payment_mode).toLowerCase() === "mock" ? "Complete mock payment" : "Retry payment confirmation"} <span>→</span></button>`;
       }
-      if (latest && latest.results.length > 0) {
-        buttons += `<button class="secondary" id="preview-annotated">View Annotated Preview <span>→</span></button>`;
+      if (job.can_regenerate) {
+        buttons += `<button class="secondary" id="rebuild">Regenerate software with AI <span>↻</span></button>`;
       }
-      if (job.runs.length > 1) {
-        buttons += `<button class="secondary" id="view-versions">View Version History <span>→</span></button>`;
+      if (job.preview_ready && latest && latest.results.length > 0) {
+        buttons += `<button class="secondary" id="preview-annotated">View Read-only Annotated Preview <span>→</span></button>`;
       }
-
-      $("actions").innerHTML = buttons || `<p class="muted">The payment gate remains closed until every approved criterion passes.</p>`;
+      $("actions").innerHTML = buttons || `<p class="muted">The payment gate opens when at least one approved acceptance check passes.</p>`;
       $("progress").scrollIntoView({ behavior: scrollBehavior(), block: "center" });
 
       if ($("checkout")) $("checkout").onclick = checkout;
+      if ($("rebuild")) $("rebuild").onclick = () => regenerate($("rebuild"));
+      if ($("capture")) $("capture").onclick = () => capturePayment(job.payment_order_id, $("capture"));
+      if ($("paypal-diagnostics")) $("paypal-diagnostics").onclick = () => inspectPaypalSeller($("paypal-diagnostics"));
+      if ($("reset-checkout")) $("reset-checkout").onclick = () => resetCheckout($("reset-checkout"));
+      if ($("download")) $("download").onclick = () => { window.location = `/api/jobs/${jobId}/download`; };
       if ($("preview-annotated")) $("preview-annotated").onclick = () => window.open(`/api/jobs/${jobId}/preview/annotated`, '_blank');
-      if ($("view-versions")) $("view-versions").onclick = viewVersions;
+    }
+
+    async function regenerate(button) {
+      setLoading(button, true);
+      const response = await fetch(`/api/jobs/${jobId}/run`, { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      setLoading(button, false);
+      if (!response.ok) { showError(result.detail || "The software could not be queued for regeneration."); return; }
+      showError("");
+      $("scan").classList.remove("done");
+      $("status-title").textContent = "Regenerating your software with AI";
+      $("status-copy").textContent = "The approved contract stays in place while the product is rebuilt and checked.";
+      $("checks").innerHTML = "";
+      $("actions").innerHTML = "";
+      poll();
     }
 
     async function checkout() {
       const button = $("checkout");
       setLoading(button, true);
-      const response = await fetch(`/api/jobs/${jobId}/paypal/order`, { method: "POST" });
-      const order = await response.json();
-      setLoading(button, false);
-      if (!response.ok) { showError(order.detail || "PayPal could not create the order."); return; }
-      const approval = order.approve_url ? `<a class="primary" href="${esc(order.approve_url)}" target="_blank" rel="noopener">Open PayPal Sandbox approval <span>↗</span></a>` : `<p class="muted">Mock order mode is active; no external approval is required.</p>`;
-      $("actions").innerHTML = `<p class="muted">Order <strong>${esc(order.id)}</strong> created for $${esc(order.amount)} ${esc(order.currency)}. Complete buyer approval, then confirm capture below.</p>${approval}<button class="primary" id="capture">Confirm server-side capture <span>→</span></button>`;
-      $("capture").onclick = async () => {
-        setLoading($("capture"), true);
-        const captured = await fetch(`/api/jobs/${jobId}/paypal/capture`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_id: order.id }) });
-        const result = await captured.json();
-        if (!captured.ok) { setLoading($("capture"), false); showError(result.detail || "PayPal capture was not confirmed."); return; }
-        $("actions").innerHTML = `<p class="muted">Payment <strong>${esc(result.capture_id)}</strong> was confirmed by the server.</p><button class="primary" id="download">Download verified source ZIP <span>↓</span></button>`;
-        $("download").onclick = () => { window.location = `/api/jobs/${jobId}/download`; };
-        confetti();
-      };
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/paypal/order`, { method: "POST" });
+        const order = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(order.detail || "PayPal could not create the order.");
+        showError("");
+        if (order.approve_url) {
+          $("status-copy").textContent = "PayPal is opening securely. Approve the itemized bill there, then return here to confirm payment.";
+          window.location.assign(order.approve_url);
+          return;
+        }
+        const refreshed = await fetch(`/api/jobs/${jobId}`);
+        renderResults(refreshed.ok ? await refreshed.json() : { status: "PAYMENT_PENDING", payment_order_id: order.id, payment_approval_url: order.approve_url, payment_mode: order.mode, runs: [] });
+      } catch (error) {
+        showError(error.message || "Could not start PayPal checkout. Check the connection and try again.");
+      } finally {
+        if (button.isConnected) setLoading(button, false);
+      }
     }
 
-    async function viewVersions() {
-      const response = await fetch(`/api/jobs/${jobId}/versions`);
-      const versions = await response.json();
-      if (!response.ok) { showError("Could not load version history."); return; }
+    async function resetCheckout(button) {
+      setLoading(button, true);
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/paypal/reset`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "The PayPal order could not be reset.");
+        renderResults(result);
+        showError("The previous order was abandoned by this app. After fixing the Sandbox seller currency preference, create a fresh PayPal order.");
+      } catch (error) {
+        setLoading(button, false);
+        showError(error.message);
+      }
+    }
 
-      const versionHtml = versions.map((v, i) => `
-        <div class="version-item" style="animation-delay:${i * 0.07}s">
-          <span>Attempt ${esc(v.attempt)}</span>
-          <span class="${v.passed ? 'pass' : 'fail'}">${esc(v.pass_count)}/${esc(v.check_count)} checks passed</span>
-          ${v.has_browser_results ? '<span class="muted">• Browser tested</span>' : ''}
-        </div>
-      `).join('');
+    async function capturePayment(orderId, button) {
+      if (!orderId) { showError("No PayPal order is attached to this job."); return; }
+      if (button) setLoading(button, true);
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/paypal/capture`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          if (button) setLoading(button, false);
+          showError(result.detail || "PayPal capture was not confirmed.");
+          return;
+        }
+        showError("");
+        const refreshed = await fetch(`/api/jobs/${jobId}`);
+        if (refreshed.ok) renderResults(await refreshed.json());
+        confetti();
+      } catch (error) {
+        if (button) setLoading(button, false);
+        showError("Could not reach the server to confirm PayPal capture. Check your connection and retry.");
+      }
+    }
 
-      $("checks").innerHTML = `<h3>Version History</h3><div class="version-list">${versionHtml}</div>`;
+    async function resumePaypalReturn() {
+      const params = new URLSearchParams(window.location.search);
+      const outcome = params.get("paypal");
+      if (!outcome) return;
+      const returnedJobId = params.get("job_id");
+      window.history.replaceState({}, "", window.location.pathname);
+      if (outcome === "invalid" || !returnedJobId) {
+        showError("PayPal returned without a matching job. Reopen the order from the verified job page.");
+        return;
+      }
+      jobId = returnedJobId;
+      $("progress").classList.remove("hidden");
+      try {
+        const response = await fetch(`/api/jobs/${jobId}`);
+        if (!response.ok) throw new Error("Job not found");
+        const job = await response.json();
+        renderResults(job);
+        if (outcome === "approved" && job.status === "PAYMENT_PENDING") {
+          await capturePayment(job.payment_order_id, null);
+        } else if (outcome === "cancelled") {
+          let diagnostic = null;
+          if (job.payment_order_id) {
+            try {
+              diagnostic = await loadPaypalDiagnostics();
+            } catch (_) { /* Keep the cancellation state useful if PayPal lookup is unavailable. */ }
+          }
+          const currency = esc(diagnostic?.currency || job.currency || "USD");
+          const orderDetails = diagnostic
+            ? ` PayPal order details: ${esc(diagnostic.amount || "unknown")} ${currency}, status ${esc(diagnostic.status || "unknown")}.`
+            : "";
+          const merchant = diagnostic?.payee_merchant_id
+            ? ` PayPal identifies the order's Sandbox seller as merchant ID ${esc(diagnostic.payee_merchant_id)}. Compare that ID with the Test Store account where you enabled currency conversion; if they differ, use the REST app credentials from that Test Store in the app's Sandbox configuration.`
+            : " I could not retrieve the Sandbox seller ID for this order, so verify that the API credentials belong to the Test Store account whose receiving preferences you updated.";
+          showError(`PayPal did not complete or capture this payment. The order is for ${currency}.${orderDetails} Your screenshot confirms conversion is enabled, so the next check is the seller attached to the order.${merchant} If the IDs match and PayPal still reports UNSUPPORTED_PAYEE_CURRENCY, the Sandbox seller or region is rejecting that currency; PayPal must allow it for that account. Retry only after resolving the seller/currency mismatch.`);
+        }
+      } catch (error) {
+        showError("Could not restore this job after PayPal returned. Refresh the page and retry.");
+      }
     }
 
     /* Small celebratory burst after a confirmed payment */
@@ -417,6 +595,8 @@ document.addEventListener("mousemove", function (event) {
       }
       setTimeout(() => layer.remove(), 2900);
     }
+
+    resumePaypalReturn();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

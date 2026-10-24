@@ -2,45 +2,48 @@
 
 ## Product intent
 
-AI Contractor PayPal is an outcome-based contracting prototype: an AI agent should not be paid for attempting work; it should be paid after a separate system verifies the promised outcome. The project connects contract, AI generation, independent verification, payment, and protected delivery in one demonstrable workflow.
+AI Contractor PayPal is an outcome-based contracting prototype: an AI agent should not be paid for attempting work; it should be paid after a separate system verifies the promised outcome. It connects a customer brief, AI-generated browser software, independent verification, payment, and protected source-package delivery in one workflow.
 
 The target users are small businesses and customers commissioning simple digital deliverables who want less ambiguity and fewer disputes. The product makes the acceptance terms visible before work starts and keeps those terms authoritative throughout generation and payment.
 
 ## Runtime flow
 
 ```text
-DRAFT -> SPEC_APPROVED -> GENERATING -> VERIFYING -> VERIFIED
+DRAFT -> SPEC_APPROVED -> GENERATING -> VERIFYING -> VERIFIED or BILLABLE or FAILED
                                       \-> REPAIRING -> VERIFYING (max 2 repairs)
-VERIFIED -> PAYMENT_PENDING -> PAID -> DELIVERED
+VERIFIED/BILLABLE -> PAYMENT_PENDING -> PAID -> DELIVERED
+PAYMENT_PENDING -> CANCELLED -> VERIFIED/BILLABLE
 ```
 
-A customer submits a brief and budget. The contract generator calls a configured structured-output LLM when available and validates the response with Pydantic. Price and currency remain server-controlled. The customer approves the contract. The page generator asks the same provider for the three source files, while the fallback generator keeps offline development reproducible. Beautiful Soup independently checks the generated HTML. Failed checks are persisted and can trigger at most two AI repair attempts. Only a verified job can create an order. Only a completed, validated payment can download the ZIP.
+A customer submits a brief and budget. NVIDIA NIM drafts the prompt-specific contract and validates the response with Pydantic. Price and currency remain server-controlled. The customer approves the contract. NIM generates a self-contained `index.html`, `style.css`, and `script.js` browser application. Beautiful Soup and optional Playwright checks verify its product-specific acceptance markers, structure, and browser rendering. Failed checks are persisted and can trigger at most two AI repair attempts. In API mode, provider failures never silently substitute a static template. The explicit offline demo mode is only a generic fixture for local tests. When final verification has passed criteria, each criterion receives an equal share of the approved budget; a job with any passing criteria becomes billable for those shares, while a job with no passing criteria remains failed and cannot be charged. PayPal order creation and capture use that computed amount. Only a completed, validated payment can download the ZIP.
+
+The generated deliverable is a static browser application; it does not include a server or external API integration. A working browser preview must deliver its client-side files to the browser, so the payment gate protects the source ZIP endpoint and delivery workflow, not secrecy from someone inspecting the preview.
 
 ## File-by-file guide
 
 ### Application and configuration
 
 - `app/main.py` creates the FastAPI application, initializes database tables, mounts static assets, serves the UI, and exposes `/health`.
-- `app/core/config.py` owns environment-backed settings for SQLite, generated artifacts, the LLM provider, PayPal Sandbox, and settings page protection. It keeps mock/demo defaults safe and never places secrets in frontend code.
+- `app/core/config.py` owns environment-backed settings for SQLite, generated artifacts, NVIDIA NIM, PayPal Sandbox, and settings page protection. It never places secrets in frontend code.
 - `app/db/database.py` creates the SQLAlchemy engine/session and provides the request-scoped `get_db` dependency.
 - `app/db/models.py` defines `Job`, `VerificationRun`, `Payment`, and `AppSetting`. The verification-run table preserves every attempt, including repairs; the payment table records order, capture, amount, currency, and status; the app_settings table stores runtime configuration including custom environment variables.
 - `app/schemas/jobs.py` contains Pydantic request/response models for briefs, contracts, approvals, and payment actions.
-- `app/api/routes.py` implements the REST surface and enforces server-side lifecycle boundaries. The run worker persists generation, verification, repair attempts, and final status. Checkout is restricted to `VERIFIED`; capture is restricted to the matching pending order; downloads are restricted to completed payment records. It also exposes `/api/settings` endpoints for runtime configuration.
+- `app/api/routes.py` implements the REST surface and enforces server-side lifecycle boundaries. The run worker persists generation, verification, repair attempts, and final status. Checkout accepts `VERIFIED` and partially passing `BILLABLE` jobs, calculates equal criterion shares, and captures only the matching order amount. Cancellation restores a retryable state. Downloads require a completed payment record.
 
 ### AI and deliverable services
 
 - `app/services/llm_provider.py` is the real HTTPX OpenAI-compatible provider. It sends structured JSON prompts, parses fenced or plain JSON, and raises a provider error without exposing secrets.
-- `app/services/contract_generator.py` asks the model to interpret the brief and return testable criteria. Pydantic validates the response, while server-owned budget/currency override any model-supplied commercial terms. Deterministic fallback is used only when the provider is not configured or temporarily fails.
-- `app/services/page_generator.py` asks the configured model for exactly `index.html`, `style.css`, and `script.js`, validates the file set, and writes it to the job directory. It also contains the polished deterministic fallback and `repair_page`, which feeds failed verifier results back to the model.
+- `app/services/contract_generator.py` asks NVIDIA NIM to interpret a software brief and return product-specific testable criteria. Pydantic validates the response, while server-owned budget/currency override any model-supplied commercial terms. The optional demo mode supplies deterministic fixture criteria only for local tests.
+- `app/services/page_generator.py` asks the configured NVIDIA NIM model for a working browser application in exactly `index.html`, `style.css`, and `script.js`, validates the file set, and writes it to the job directory. `repair_page` feeds failed verifier results back to the configured model. The optional demo mode supplies a generic template fixture only for local tests.
 - `app/services/verifier.py` is the entry point for verification. It delegates to enhanced verification.
-- `app/services/verifier_enhanced.py` provides enhanced verification with evidence collection using multiple methods (CSS selector, content check, attribute check, regex). Each check includes detailed evidence of what was found vs expected.
-- `app/services/browser_verifier.py` provides browser-based functional verification using Playwright. It tests actual functionality (form submission, navigation scrolling, responsive layout, JavaScript errors) in a real headless browser. Falls back gracefully if Playwright is not installed.
-- `app/services/annotated_preview.py` creates visual annotations on the generated page, adding green/red borders to elements to show which verification checks passed or failed.
-- `app/services/artifact_service.py` packages only generated HTML/CSS/JS and never exposes the generated directory as a public static directory.
+- `app/services/verifier_enhanced.py` checks legacy records with their existing selectors and checks new generated software against approved product markers, with evidence for each result.
+- `app/services/browser_verifier.py` smoke-checks generated software rendering, criterion visibility, mobile width, and JavaScript errors with Playwright. Existing legacy jobs retain their original selector checks. If Playwright or Chromium is unavailable, browser checks are explicitly marked skipped.
+- `app/services/annotated_preview.py` inlines generated CSS into an isolated read-only preview, strips JavaScript and inline event handlers, adds green/red verification borders, and labels the view as payment-gated. The HTML and CSS used to display the preview remain visible to the browser; application behavior is kept in the gated JavaScript file.
+- `app/services/artifact_service.py` packages only `index.html`, `style.css`, and `script.js`; the generated directory is never mounted as public static content.
 
 ### Payment services
 
-- `app/services/paypal_service.py` supports two explicit modes. `mock` creates local IDs for tests. `sandbox` obtains an OAuth token from `api-m.sandbox.paypal.com`, creates a real Orders API v2 `CAPTURE` order, returns PayPal's approval URL, captures server-side, and validates completed order/capture status, job association, amount, and currency.
+- `app/services/paypal_service.py` supports two explicit modes. `mock` creates local IDs for tests. `sandbox` obtains an OAuth token from `api-m.sandbox.paypal.com`, creates a real USD-only Orders API v2 `CAPTURE` order, returns PayPal's approval URL, captures server-side, and validates completed order/capture status, job association, amount, and USD currency.
 - `app/services/runtime_settings.py` manages runtime configuration stored in the database. It supports predefined settings (LLM provider, PayPal configuration, etc.) and custom environment variables. Secret values are encrypted using Fernet when `SETTINGS_ENCRYPTION_KEY` is configured. Custom variables are prefixed with `CUSTOM_` in the database and applied to `os.environ` at runtime.
 - `app/templates/index.html` presents the brief, contract approval, verification results, repair-aware status, PayPal approval action, capture confirmation, and download action. Includes a "Settings" button in the header for easy access to the settings page.
 - `app/templates/settings.html` provides a user-friendly GUI for configuring runtime settings, including both predefined provider settings and custom environment variables. Each field includes clear labels and explanations of what values should go where. Secret values are write-only and never displayed back.
@@ -70,7 +73,8 @@ A customer submits a brief and budget. The contract generator calls a configured
 - `GET /api/jobs/{id}/preview` — serve the generated HTML preview after generation.
 - `GET /api/jobs/{id}/preview/annotated` — serve the annotated preview with visual verification feedback (green/red borders).
 - `GET /api/jobs/{id}/versions` — get version history showing all generation attempts with verification results.
-- `POST /api/jobs/{id}/paypal/order` — create a mock or real Sandbox order only for `VERIFIED` jobs.
+- `POST /api/jobs/{id}/paypal/order` — create a mock or real Sandbox order for `VERIFIED` or `BILLABLE` jobs using only the passed criteria's budget shares.
+- `POST /api/jobs/{id}/paypal/reset` — abandon a stuck local pending order and restore the job to its verified or billable state so a fresh order can be created.
 - `POST /api/jobs/{id}/paypal/capture` — capture the job's own pending order and validate the payment response.
 - `GET /api/jobs/{id}/download` — release a ZIP only after persisted payment completion.
 - `GET /api/settings` — read runtime settings (requires `X-Settings-Token` header when `SETTINGS_ADMIN_TOKEN` is configured). Secret values are never returned.
@@ -81,19 +85,19 @@ A customer submits a brief and budget. The contract generator calls a configured
 ### Offline/local mode
 
 ```env
-LLM_PROVIDER=demo
+LLM_PROVIDER=nvidia-nim
 PAYPAL_MODE=mock
 ```
 
-This mode requires no provider credentials and is used by the automated tests.
+Demo mode is not a production generation mode. It uses a static fixture so the automated tests do not spend API credits; configure an NIM model and API key for customer contract and software generation.
 
 ### Judge/demo mode
 
 ```env
-LLM_PROVIDER=openai-compatible
+LLM_PROVIDER=nvidia-nim
 LLM_API_KEY=...
-LLM_MODEL=gpt-4o-mini
-LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=your-nvidia-nim-model-id
+LLM_BASE_URL=https://integrate.api.nvidia.com/v1
 PAYPAL_MODE=sandbox
 PAYPAL_CLIENT_ID=...
 PAYPAL_CLIENT_SECRET=...
@@ -113,6 +117,7 @@ The application includes a runtime settings page at `/settings` that allows conf
 - **User-friendly GUI**: Each setting field includes clear labels and explanations of what values should go where, making configuration easy without needing to understand the underlying code
 - **Security**: Secret values are encrypted using Fernet when `SETTINGS_ENCRYPTION_KEY` is configured. In production, `SETTINGS_ADMIN_TOKEN` is required to access the settings page
 - **Persistence**: Settings are stored in the `app_settings` database table and loaded at application startup
+- **Environment values**: Non-secret fields show the active values from the project-root `.env` file or saved runtime overrides. Secret values are never returned; the GUI only reports whether they are configured.
 
 ## Security and production hardening
 
