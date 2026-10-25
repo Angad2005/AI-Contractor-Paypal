@@ -4,10 +4,12 @@ __pycache__/
 .venv/
 .work/
 .env
+.dev.vars
 app.db
 *.sqlite3
 generated/*
 !generated/.gitkeep
+node_modules/
 .vscode/
 .DS_Store
 venv/

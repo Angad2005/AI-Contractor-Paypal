@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "overrides": {
+    "undici": "7.30.1"
+  }
+}

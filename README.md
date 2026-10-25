@@ -229,8 +229,44 @@ Follow the Quick Start instructions above.
 
 ```bash
 docker build -t ai-contractor-paypal .
-docker run -p 8000:8000 --env-file .env ai-contractor-paypal
+docker run -p 8000:8080 --env-file .env ai-contractor-paypal
 ```
+
+### Cloudflare Containers
+
+This project is a FastAPI application, so it deploys to Cloudflare through a Worker that proxies requests to the Dockerized backend. It is not a static Pages site or a standalone Python Worker. Cloudflare Containers require a Workers Paid plan.
+
+The repository includes `wrangler.jsonc`, `src/index.ts`, and a Dockerfile for this deployment. In Workers & Pages → your Worker → Settings → Builds, configure:
+
+- **Build command**: leave blank
+- **Deploy command**: `npx wrangler deploy`
+- **Root directory**: `/` (the repository root containing `wrangler.jsonc`)
+- **Build variables**: none required
+
+The Docker build installs the application dependencies and Playwright Chromium. Wrangler builds and publishes the image as part of deployment. The Worker starts the container on first request and forwards all paths to FastAPI.
+
+The default deployment settings use mock PayPal mode and SQLite, so no PayPal credentials are needed for a test deployment. Set these as Worker secrets before using the app:
+
+```bash
+npx wrangler secret put LLM_API_KEY
+npx wrangler secret put SETTINGS_ADMIN_TOKEN
+npx wrangler secret put SETTINGS_ENCRYPTION_KEY
+```
+
+Generate an encryption key with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+For PayPal Sandbox, change `PAYPAL_MODE` to `sandbox` in `wrangler.jsonc`, set the return and cancel URLs to your deployed Worker URL, and add the sandbox credentials:
+
+```bash
+npx wrangler secret put PAYPAL_CLIENT_ID
+npx wrangler secret put PAYPAL_CLIENT_SECRET
+```
+
+SQLite and generated files live on the container's local filesystem and are not a production persistence solution. Use a managed PostgreSQL database for durable application data; make sure generated deliverables are stored somewhere durable before using this for real users. Do not put secrets in `wrangler.jsonc`, build variables, or the Docker image.
 
 ### Render (Recommended for Hosting)
 

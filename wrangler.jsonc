@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ai-contractor-paypal",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-25",
+  "observability": {
+    "enabled": true
+  },
+  "containers": [
+    {
+      "class_name": "Backend",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "./Dockerfile"
+        }
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BACKEND",
+        "class_name": "Backend"
+      }
+    ]
+  },
+  "exports": {
+    "Backend": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "DATABASE_URL": "sqlite:///./app.db",
+    "GENERATED_DIR": "generated",
+    "PAYPAL_MODE": "mock",
+    "PAYPAL_API_BASE_URL": "https://api-m.sandbox.paypal.com",
+    "PAYPAL_RETURN_URL": "https://your-worker.workers.dev/api/paypal/return",
+    "PAYPAL_CANCEL_URL": "https://your-worker.workers.dev/api/paypal/cancel",
+    "LLM_PROVIDER": "nvidia-nim",
+    "LLM_MODEL": "nvidia/nemotron-3.5-bolt-e4b",
+    "LLM_BASE_URL": "https://integrate.api.nvidia.com/v1"
+  }
+}
