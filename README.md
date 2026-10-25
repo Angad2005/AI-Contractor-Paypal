@@ -243,7 +243,7 @@ The repository includes `wrangler.jsonc`, `src/index.ts`, and a Dockerfile for t
 - **Root directory**: `/` (the repository root containing `wrangler.jsonc`)
 - **Build variables**: none required
 
-The Docker build installs the application dependencies and Playwright Chromium. Wrangler builds and publishes the image as part of deployment. The Worker starts the container on first request and forwards all paths to FastAPI.
+The Docker build uses Microsoft's Playwright Python image matching the pinned Playwright 1.49.0 dependency, so Chromium and its OS libraries are already installed; this avoids Playwright's unsupported Debian dependency fallback. Wrangler builds and publishes the image as part of deployment. The Worker starts the container on first request and forwards all paths to FastAPI.
 
 The default deployment settings use mock PayPal mode and SQLite, so no PayPal credentials are needed for a test deployment. Set these as Worker secrets before using the app:
 
