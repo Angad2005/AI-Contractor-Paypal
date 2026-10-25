@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 class JobCreate(BaseModel):
     prompt: str = Field(min_length=20, max_length=2000)
     budget: float = Field(default=10, gt=0, le=10000)
+    deliverable_type: Literal["browser_app", "source_project"] = "browser_app"
 
 class Criterion(BaseModel):
     key: str

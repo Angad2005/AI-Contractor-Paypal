@@ -258,6 +258,7 @@ document.addEventListener("mousemove", function (event) {
     if (!document.getElementById("create")) return;
     const $ = (id) => document.getElementById(id);
     let jobId = null;
+    const isSourceProject = () => $("deliverable-type").value === "source_project";
     const scrollBehavior = () => (window.Prefs && window.Prefs.reducedMotion() ? "auto" : "smooth");
 
     const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
@@ -335,6 +336,13 @@ document.addEventListener("mousemove", function (event) {
 
     function renderContract(job) {
       $("contract-price").textContent = `Up to ${money(job.price)}`;
+      if (job.deliverable_type === "source_project") {
+        $("contract-title-text").textContent = "Source package requirements";
+        $("contract-explainer").textContent = "The package structure is checked before checkout. The generated code is not compiled, executed, or feature-tested.";
+      } else {
+        $("contract-title-text").textContent = "Definition of done";
+        $("contract-explainer").textContent = "The approved budget is split evenly across these objective checks. Only passed checks are billed; failed checks add $0 to the amount due.";
+      }
       const criteria = job.contract.criteria || [];
       const totalCents = Math.round(Number(job.price) * 100);
       const baseCents = criteria.length ? Math.floor(totalCents / criteria.length) : 0;
@@ -349,12 +357,23 @@ document.addEventListener("mousemove", function (event) {
       $("contract").scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     }
 
+    function updateDeliverableHelp() {
+      const sourceProject = isSourceProject();
+      $("deliverable-help").textContent = sourceProject
+        ? "Generate a custom software source project (for example, desktop or command-line software) as a ZIP. No browser preview is created."
+        : "The AI generates a self-contained browser app (HTML, CSS, and JavaScript). Preview it before checkout; the source ZIP stays payment-gated.";
+      $("workspace-note").classList.toggle("hidden", !sourceProject);
+    }
+
+    $("deliverable-type").addEventListener("change", updateDeliverableHelp);
+    updateDeliverableHelp();
+
     $("create").onclick = async () => {
       showError("");
       const button = $("create");
       setLoading(button, true);
       try {
-        const response = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: $("prompt").value, budget: Number($("budget").value) }) });
+        const response = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: $("prompt").value, budget: Number($("budget").value), deliverable_type: $("deliverable-type").value }) });
         const job = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(job.detail || "Please add a little more detail to your brief.");
         jobId = job.id; renderContract(job);
@@ -384,7 +403,9 @@ document.addEventListener("mousemove", function (event) {
           VERIFYING: "Verifying every acceptance criterion",
           REPAIRING: "Repairing failed checks"
         };
-        $("status-title").textContent = labels[job.status] || "Working";
+        $("status-title").textContent = job.status === "VERIFYING" && isSourceProject()
+          ? "Checking the source package structure"
+          : labels[job.status] || "Working";
         setTimeout(poll, 500);
         return;
       }
@@ -398,14 +419,15 @@ document.addEventListener("mousemove", function (event) {
       const paid = job.paid || ["PAID", "DELIVERED"].includes(job.status);
       const paymentPending = job.status === "PAYMENT_PENDING";
       const payable = Number(job.payable_amount ?? job.price ?? 0);
+      const sourceProject = job.deliverable_type === "source_project";
       const checkoutReady = Boolean(job.can_checkout ?? ["VERIFIED", "BILLABLE"].includes(job.status)) && payable > 0;
       const allCriteriaPassed = Number(job.criteria_total || 0) > 0 && Number(job.criteria_passed || 0) === Number(job.criteria_total || 0);
       const verified = job.status === "VERIFIED" || (checkoutReady && allCriteriaPassed);
       const billable = job.status === "BILLABLE" || (checkoutReady && !allCriteriaPassed);
       renderBill(job, paid);
       $("scan").classList.add("done");
-      $("status-title").textContent = paid ? "Payment confirmed. Delivery is ready." : verified ? "Verified. Continue to payment." : billable ? "Partial results are billable. Continue to payment." : paymentPending ? "PayPal approval is pending." : generationError ? "AI generation could not complete." : "Verification needs attention";
-      $("status-copy").textContent = paid ? "The server confirmed payment. Your verified source ZIP is ready." : verified ? `All ${job.criteria_total} acceptance checks passed. Amount due: ${money(payable)}.` : billable ? `${job.criteria_passed} of ${job.criteria_total} acceptance checks passed. Only passed checks are billed: ${money(payable)}.` : paymentPending ? `Approve the ${money(payable)} order with PayPal, then return here to confirm capture.` : generationError ? generationError.evidence : "No approved acceptance checks passed, so there is no payment due.";
+      $("status-title").textContent = paid ? "Payment confirmed. Delivery is ready." : verified ? (sourceProject ? "Source package ready. Continue to payment." : "Verified. Continue to payment.") : billable ? "Partial results are billable. Continue to payment." : paymentPending ? "PayPal approval is pending." : generationError ? "AI generation could not complete." : "Verification needs attention";
+      $("status-copy").textContent = paid ? (sourceProject ? "Payment is confirmed. Download your custom source project ZIP. Its code was not built or run by this app." : "The server confirmed payment. Your verified source ZIP is ready.") : verified ? (sourceProject ? `The source package structure passed its check. The software was not compiled, run, or feature-tested. Amount due: ${money(payable)}.` : `All ${job.criteria_total} acceptance checks passed. Amount due: ${money(payable)}.`) : billable ? `${job.criteria_passed} of ${job.criteria_total} acceptance checks passed. Only passed checks are billed: ${money(payable)}.` : paymentPending ? `Approve the ${money(payable)} order with PayPal, then return here to confirm capture.` : generationError ? generationError.evidence : "No approved acceptance checks passed, so there is no payment due.";
       const ok = verified || billable || paid || checkoutReady;
       const dotColor = ok ? "var(--lime)" : paymentPending ? "#f6c453" : "var(--red)";
       $("status-dot").style.background = dotColor;
@@ -426,7 +448,7 @@ document.addEventListener("mousemove", function (event) {
 
       let buttons = "";
       if (paid) {
-        buttons += `<p class="muted">Capture <strong>${esc(job.capture_id || "confirmed")}</strong> was verified by the server.</p><button class="primary" id="download">Download verified source ZIP <span>↓</span></button>`;
+        buttons += `<p class="muted">Capture <strong>${esc(job.capture_id || "confirmed")}</strong> was verified by the server.</p><button class="primary" id="download">Download ${sourceProject ? "custom project" : "verified source"} ZIP <span>↓</span></button>`;
       } else if (checkoutReady) {
         buttons += `<button class="paypal-button" id="checkout"><span class="paypal-wordmark" aria-label="PayPal">PayPal</span><span>Continue to payment · ${money(payable)}</span><span aria-hidden="true">→</span></button>`;
       } else if (paymentPending) {

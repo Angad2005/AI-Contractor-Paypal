@@ -23,12 +23,32 @@ def _deterministic_contract(prompt: str, budget: float) -> Contract:
     )
 
 
-def make_contract(prompt: str, budget: float) -> Contract:
+def _source_project_contract(budget: float) -> Contract:
+    return Contract(
+        required_sections=["project source files"],
+        required_features=["downloadable source project"],
+        criteria=[
+            Criterion(
+                key="source_package",
+                label="Downloadable source project",
+                detail="A non-empty project source package is generated and available after payment.",
+            )
+        ],
+        price=round(budget, 2),
+    )
+
+
+def make_contract(
+    prompt: str, budget: float, deliverable_type: str = "browser_app"
+) -> Contract:
     """Create a contract with a real structured-output LLM when configured.
 
     Price and currency are always overridden by server-controlled values so the model
     cannot redefine the commercial terms supplied by the customer.
     """
+    if deliverable_type == "source_project":
+        return _source_project_contract(budget)
+
     if is_demo_mode():
         return _deterministic_contract(prompt, budget)
 

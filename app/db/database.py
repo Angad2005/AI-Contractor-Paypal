@@ -12,6 +12,10 @@ engine = create_engine(database_url, connect_args=connect_args, pool_pre_ping=Tr
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 _LEGACY_COLUMNS = {
+    "jobs": {
+        "deliverable_type": "VARCHAR(32) NOT NULL DEFAULT 'browser_app'",
+        "artifact_path": "VARCHAR(255)",
+    },
     "app_settings": {
         "is_custom": "BOOLEAN NOT NULL DEFAULT FALSE",
     },

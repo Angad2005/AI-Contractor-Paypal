@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#050c09">
     <title>AI Contractor PayPal</title>
     <link rel="stylesheet" href="/static/css/app.css">
-    <script src="/static/js/app.js?v=usd-billing-1"></script>
+    <script src="/static/js/app.js?v=source-projects-1"></script>
 </head>
 <body>
     <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -22,7 +22,7 @@
             <section class="intro">
                 <div class="kicker">Outcome-based contracting / 001</div>
                 <h1>Pay for what<br><em>ships.</em></h1>
-                <p>Describe the software you want built. Approve its acceptance contract, preview the AI-generated app with verification annotations, then pay to unlock the source package.</p>
+                <p>Describe the software you want built. Choose a browser app to preview, or request a custom source project as a private ZIP unlocked after payment.</p>
                 <div class="signals">
                     <span>01 / CONTRACT</span>
                     <span>02 / VERIFY</span>
@@ -46,7 +46,13 @@
                     </div>
                     <label for="prompt">What software should the contractor build?</label>
                     <textarea id="prompt">Build a responsive project tracker web app for a small creative team. Users can create and edit projects, assign a status, filter the board, and see a summary of upcoming work.</textarea>
-                    <p class="muted">The AI generates a self-contained browser app (HTML, CSS, and JavaScript). Preview it before checkout; the source ZIP stays payment-gated.</p>
+                    <label for="deliverable-type">Delivery type</label>
+                    <select id="deliverable-type" class="deliverable-select">
+                        <option value="browser_app">Browser app — preview before payment</option>
+                        <option value="source_project">Custom software — source ZIP, no preview</option>
+                    </select>
+                    <p id="deliverable-help" class="muted">The AI generates a self-contained browser app (HTML, CSS, and JavaScript). Preview it before checkout; the source ZIP stays payment-gated.</p>
+                    <p id="workspace-note" class="muted hidden">The source project stays in a job-specific server-side workspace and is not run or compiled. VM and direct personal-folder connections are not configured.</p>
                     <div class="row">
                         <label class="budget">
                             Budget
@@ -68,10 +74,10 @@
                         <span class="step">02</span>
                     </div>
                     <div class="contract-title">
-                        <h2>Definition of done</h2>
+                        <h2 id="contract-title-text">Definition of done</h2>
                         <span id="contract-price"></span>
                     </div>
-                    <p class="muted">The approved budget is split evenly across these objective checks. Only passed checks are billed; failed checks add $0 to the amount due.</p>
+                    <p id="contract-explainer" class="muted">The approved budget is split evenly across these objective checks. Only passed checks are billed; failed checks add $0 to the amount due.</p>
                     <div id="criteria" class="criteria"></div>
                     <button id="approve" class="primary full">Approve &amp; start build <span>→</span></button>
                 </div>

@@ -17,6 +17,7 @@ from app.services.verifier_enhanced import verify_page_enhanced
 from app.services.annotated_preview import create_annotated_preview
 from app.services.browser_verifier import verify_with_browser
 from app.services.artifact_service import make_zip
+from app.services.project_generator import generate_source_project, verify_source_project
 from app.services.paypal_service import PayPalError, create_order, capture_order, get_order_diagnostics
 from app.services.runtime_settings import save_runtime_settings, visible_settings
 from app.services.llm_provider import LLMProviderError
@@ -96,12 +97,16 @@ def _ready_status(job: Job, run: VerificationRun | None = None) -> str:
 def _checkout_ready(job: Job, summary: dict | None = None) -> bool:
     """Allow checkout for completed partial runs that have a non-zero invoice."""
     summary = summary or _billing_summary(job)
+    deliverable_ready = (
+        bool(job.artifact_path and Path(job.artifact_path).is_dir())
+        if job.deliverable_type == "source_project"
+        else bool(job.preview_path and Path(job.preview_path).is_file())
+    )
     return bool(
         job.status in {"VERIFIED", "BILLABLE", "FAILED"}
         and job.runs
         and summary["payable_amount"] > 0
-        and job.preview_path
-        and Path(job.preview_path).is_file()
+        and deliverable_ready
     )
 
 
@@ -122,6 +127,7 @@ def serialize(job: Job):
         "id": job.id,
         "title": job.title,
         "prompt": job.prompt,
+        "deliverable_type": job.deliverable_type,
         "status": status,
         "price": float(job.price),
         "currency": PAYMENT_CURRENCY,
@@ -133,7 +139,14 @@ def serialize(job: Job):
         "can_checkout": checkout_ready,
         "contract": contract,
         "runs": [{"attempt": r.attempt, "passed": r.passed, "results": r.results_json} for r in sorted(job.runs, key=lambda item: item.attempt)],
-        "preview_ready": bool(job.preview_path and Path(job.preview_path).is_file()),
+        "preview_ready": bool(
+            job.deliverable_type == "browser_app"
+            and job.preview_path
+            and Path(job.preview_path).is_file()
+        ),
+        "artifact_ready": bool(
+            job.artifact_path and Path(job.artifact_path).is_dir()
+        ),
         "can_regenerate": bool(status in {"VERIFIED", "BILLABLE", "FAILED"} and retryable_payment and attempts < MAX_JOB_ATTEMPTS),
         "paid": bool(job.payment and job.payment.status == "COMPLETED"),
         "capture_id": job.payment.capture_id if job.payment else None,
@@ -159,7 +172,35 @@ def run_job(job_id: str):
             # Hide an older deliverable while replacing it so a failed new build
             # cannot accidentally leave a stale template available for checkout.
             job.preview_path = None
+            job.artifact_path = None
         job.status = "GENERATING"; db.commit(); contract = Contract.model_validate(job.approved_spec)
+        if job.deliverable_type == "source_project":
+            attempt = max((run.attempt for run in job.runs), default=0) + 1
+            job.status = "VERIFYING"
+            db.commit()
+            project_path = generate_source_project(job.id, job.prompt, attempt)
+            result = verify_source_project(project_path)
+            job.preview_path = None
+            job.artifact_path = project_path
+            job.runs.append(
+                VerificationRun(
+                    attempt=attempt,
+                    results_json=[result],
+                    passed=result["passed"],
+                )
+            )
+            db.add(
+                GenerationVersion(
+                    job_id=job.id,
+                    attempt_number=attempt,
+                    verification_results=[result],
+                    browser_results=[],
+                )
+            )
+            has_current_run = True
+            job.status = _ready_status(job)
+            db.commit()
+            return
         path = generate_page(job.id, contract, job.prompt)
         job.preview_path = path
 
@@ -238,10 +279,10 @@ def run_job(job_id: str):
 @router.post("/jobs", status_code=201)
 def create_job(payload: JobCreate, db: Session = Depends(get_db)):
     try:
-        contract = make_contract(payload.prompt, payload.budget)
+        contract = make_contract(payload.prompt, payload.budget, payload.deliverable_type)
     except (LLMProviderError, ValueError, TypeError) as exc:
         raise HTTPException(502, f"The AI provider could not draft this contract: {exc}") from exc
-    job_id = str(uuid.uuid4()); job = Job(id=job_id, prompt=payload.prompt, title="Software build", price=contract.price, currency=PAYMENT_CURRENCY, status="DRAFT")
+    job_id = str(uuid.uuid4()); job = Job(id=job_id, prompt=payload.prompt, title="Software build", deliverable_type=payload.deliverable_type, price=contract.price, currency=PAYMENT_CURRENCY, status="DRAFT")
     job.approved_spec = contract.model_dump(); db.add(job); db.commit(); db.refresh(job); return serialize(job)
 
 @router.get("/jobs/{job_id}")
@@ -279,7 +320,7 @@ def run(job_id: str, background: BackgroundTasks, db: Session = Depends(get_db))
 @router.get("/jobs/{job_id}/preview")
 def preview(job_id: str, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
-    if not job or not job.preview_path: raise HTTPException(404, "Preview not ready")
+    if not job or job.deliverable_type != "browser_app" or not job.preview_path: raise HTTPException(404, "Preview not available for this deliverable")
     return FileResponse(job.preview_path, headers={"Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline"})
 
 
@@ -287,8 +328,8 @@ def preview(job_id: str, db: Session = Depends(get_db)):
 def preview_annotated(job_id: str, db: Session = Depends(get_db)):
     """Return annotated preview with visual verification feedback"""
     job = db.get(Job, job_id)
-    if not job or not job.preview_path:
-        raise HTTPException(404, "Preview not ready")
+    if not job or job.deliverable_type != "browser_app" or not job.preview_path:
+        raise HTTPException(404, "Preview not available for this deliverable")
 
     latest_run = max(job.runs, key=lambda item: item.attempt, default=None)
     if not latest_run:
@@ -470,4 +511,11 @@ def paypal_capture(job_id: str, payload: PaymentAction, x_paypal_request_id: str
 def download(job_id: str, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
     if not job or not job.payment or job.payment.status != "COMPLETED" or job.status not in {"PAID","DELIVERED"}: raise HTTPException(403, "Delivery is locked until payment is confirmed")
-    target = make_zip(job_id); job.status="DELIVERED"; db.commit(); return FileResponse(target, filename=target.name, media_type="application/zip")
+    try:
+        target = make_zip(
+            job_id,
+            job.artifact_path if job.deliverable_type == "source_project" else None,
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(500, f"Could not package the paid deliverable: {exc}") from exc
+    job.status="DELIVERED"; db.commit(); return FileResponse(target, filename=target.name, media_type="application/zip")

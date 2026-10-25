@@ -1,6 +1,6 @@
 # AI Contractor PayPal
 
-> **Pay for what ships.** An outcome-based contracting MVP where an AI contractor builds a browser-based software product from a customer brief, an independent verifier checks its approved acceptance contract, and a PayPal-gated ZIP download releases the source package only after payment is confirmed.
+> **Pay for what ships.** An outcome-based contracting MVP where an AI contractor builds a browser app or a download-only custom source project from a customer brief, and a PayPal-gated ZIP download releases the deliverable only after payment is confirmed.
 
 ## Hackathon Submission
 
@@ -53,21 +53,23 @@ PayPal starts in mock mode by default, and the app uses its built-in development
 
 ## Project Overview
 
-AI Contractor PayPal generates small, self-contained browser applications from customer briefs. The LLM returns an `index.html`, `style.css`, and `script.js` application, which can be previewed and verified before the source package is released. The complete flow:
+AI Contractor PayPal generates software deliverables from customer briefs. Browser apps are previewed and checked before checkout. Custom source projects (such as desktop or command-line software) are packaged without a browser preview and released after payment. The complete flow:
 
 1. **Brief Submission**: Customer submits a plain-language brief and budget
 2. **Contract Analysis**: A real structured-output LLM turns the brief into testable acceptance criteria
 3. **Contract Approval**: Customer approves the specification before generation begins
-4. **Software Generation**: AI builds the requested browser app as `index.html`, `style.css`, and `script.js`
-5. **Independent Verification**: The verifier checks required product elements and acceptance markers against the approved criteria
-6. **Repair Loop**: Failed checks can be returned to the AI for at most two repair attempts
+4. **Software Generation**: AI builds a browser app as `index.html`, `style.css`, and `script.js`, or creates a custom text-based source project with setup instructions
+5. **Verification**: Browser apps receive the existing acceptance checks; source projects are checked for a non-empty README and source files, but are not compiled, executed, or feature-tested
+6. **Repair Loop**: Failed browser checks can be returned to the AI for at most two repair attempts
 7. **Outcome Billing**: The contract budget is split equally across acceptance criteria; only passing criteria contribute to the payable amount
 8. **PayPal Order**: Server creates and captures a real PayPal Developer Sandbox order (or mock in local mode)
 9. **Gated Delivery**: Download endpoint independently checks the database before creating a protected ZIP
 
 **Key Innovation**: The payment gate eligibility is determined by an approved contract and an independent verifier—not just a checkout button.
 
-The generated product runs entirely in the browser and has no backend integration. The annotated preview is read-only: it serves the generated page and styles with verification marks, while removing JavaScript and inline event handlers. The ZIP endpoint releases all source files only after verified payment. The preview still sends HTML and CSS to the browser, so those visual files can be inspected; a browser-rendered preview cannot make its visual markup secret.
+Select **Browser app** for a previewable static website or **Custom software** for a download-only source package. Custom projects are generated as text files in a job-specific server-side directory; no generated code is executed by the app. Their checkout check confirms only that the source package has a README and non-empty files—it does not prove that the software builds or meets every requested feature.
+
+VM connections and direct access to a folder on the customer's computer are not supported. The app has no user-account isolation or configured VM connection protocol; generated source packages are stored by the app and become downloadable only after confirmed payment. A browser preview is read-only, but its HTML and CSS are sent to the browser and can be inspected; previewing cannot make that markup secret.
 
 ## Configuration
 
@@ -148,6 +150,7 @@ SETTINGS_ENCRYPTION_KEY=your_fernet_encryption_key
 ```
 
 **Note**: The application applies safe, additive schema updates at startup. You can also run `python migrate_db.py` manually if needed. These updates cover:
+- `deliverable_type` and `artifact_path` columns to `jobs` for download-only source projects
 - `is_custom` column to `app_settings` table for custom environment variables
 - `generation_versions` table for version history tracking
 - `approval_url`, `order_request_id`, and `capture_request_id` columns to `payments` table for PayPal integration
@@ -198,9 +201,11 @@ After saving that preference, reset the old order and create a fresh PayPal orde
 - **Payment Verification**: Capture requires the job's own pending order and the exact computed amount/currency
 - **Independent Verification**: `/download` checks persisted payment state rather than browser callbacks
 - **Artifact Isolation**: Generated artifacts are kept outside the static directory
+- **Source Project Handling**: Custom source projects are stored server-side, constrained by file-count and size limits, and never executed or compiled
 
 **Production Recommendations**:
 - Run generated pages in an isolated worker/container with outbound network disabled
+- Add authenticated, isolated workspace access before enabling VM or personal-directory connections; never accept arbitrary host paths or execute generated project files in the web process
 - Verify PayPal webhook signatures
 - Use PostgreSQL and object storage for persistence
 - Add isolated Playwright browser tests
