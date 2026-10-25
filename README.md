@@ -245,6 +245,8 @@ The repository includes `wrangler.jsonc`, `src/index.ts`, and a Dockerfile for t
 
 The Docker build uses Microsoft's Playwright Python image matching the pinned Playwright 1.49.0 dependency, so Chromium and its OS libraries are already installed; this avoids Playwright's unsupported Debian dependency fallback. Wrangler builds and publishes the image as part of deployment. The Worker starts the container on first request and forwards all paths to FastAPI.
 
+If the image build completes but `wrangler deploy` fails on a request to `/accounts/<account-id>/containers/me`, check that the Cloudflare account selected for deployment has a Workers Paid plan with Containers available. This is an account/API prerequisite, not an application build error; changing the Dockerfile or Worker source cannot enable the account feature. If the account is already eligible, check that Wrangler is authenticated to the intended account and consult the full Wrangler log for the API response status and details.
+
 The default deployment settings use mock PayPal mode and SQLite, so no PayPal credentials are needed for a test deployment. Set these as Worker secrets before using the app:
 
 ```bash

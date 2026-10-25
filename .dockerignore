@@ -12,3 +12,4 @@ __pycache__
 generated/
 tests/
 venv/
+node_modules/
